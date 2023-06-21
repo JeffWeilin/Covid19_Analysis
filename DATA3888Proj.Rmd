@@ -1,0 +1,669 @@
+---
+title: "DATA3888 Group Project"
+author: "Covid C2"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: paper
+    highlight: breezedark
+    code_folding: hide
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    number_sections: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r packages, message = FALSE, warning = FALSE}
+# Load required packages
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+```
+
+
+# Executive Summary  
+  
+The Coronavirus disease (COVID-19) is a virus that was declared as a pandemic in early March of 2020. Governments have been tasked with limiting the spread and the impacts the virus causes on society, which may include financial/economic impacts, physical and even mental. As the virus has continued to evolve, so have combative measures such as the rapid development of vaccinations. Governments have employed various measures such as mandatory facial coverings, stay-at-home orders and a strong recommendation for vaccinations. 
+  
+Our product aims to understand whether the development of a country affects its response and how successful its measures tackle the pandemic, and at what cost these responses affect the freedoms of its citizens. The main findings of this report are identifying the top 2 and bottom 2 performing countries in various HDI clusters and confirming the influence of HDI on the effectiveness of government responses to COVID-19.  
+  
+As countries have been affected by COVID-19, we intend to ensure that governments are well equipped if future global pandemics or crises were to arise. Therefore, the practical relevance of our analysis is that we intend for governing bodies and health organisations to conduct investigations into the responses of well-performing countries and implement them in future scenarios. This allows for better provision for certain resources in the near future, such as vaccines, ventilators, and items of necessity such as face masks to provision certain imposed restrictions for a variety of nations, with the ability to prioritize nations that may be underdeveloped or less developed than others. 
+  
+# Aim and Background  
+  
+COVID-19 was the fourth leading cause of death globally, accounting for one in 20 deaths worldwide since the beginning of 2020. There is a clear distinction between those locations including China, Taiwan, Thailand and New Zealand that acted rapidly to control the spread of COVID-19 and those that did not such as Brazil. Mexico, Peru and several U.S. states. For example, Australia and New Zealand acted quickly, using responses such as strict international and domestic travel restrictions and social distancing mandates leading to less overall deaths. A question arises surrounding why COVID-19 deaths are lower in some regions and locations? Research suggests that a variety of contextual and population-health factors might explain a substantial amount of the variation. For example, age patterns (about 50%), country wealth (measured as gross domestic product per capita, about 3%). Most of these differences are explained through the human development index (HDI) which considers social and economic factors through its 3 key dimensions: A long and healthy life, access to education and a decent standard of living. These together combine to form the HDI, which is a considerably stronger metric to judge a location's development compared to solely economic output.  
+Source: Troeger, C. (2022)  
+  
+## Motivation  
+  
+Since the pandemic began, various governments have been limiting pandemic-induced socioeconomic damage and deaths. Therefore, our motivation is to better understand how the varying HDI scores of each nation has influenced the effectiveness of response to this pandemic and identifying the best performing countries for certain clusters to assist in future pandemic response planning. This would greatly benefit nations with similar financial and developed resources. The main stakeholder identified for this product is the World Health Organisation (WHO) as the group that provides advice and global health orders.   
+  
+# Method  
+## Data Collection
+
+Data provided as a baseline for this investigation includes the Our World in Data (OWID) COVID Dataset. This was extracted directly from their GitHub repository, where the data gets updated daily with the first date updated in March 2020. This also includes an amalgamation of data from John Hopkins University, the UN, the WHO and various sources collated by the OWID team based off worldwide government sources.
+
+Furthermore, data provided by the University of Oxford regarding the stringency and actions of governments has been used, which details certain attributes such as stay-at-home orders, mask mandates, vaccination mandates and similar stringency measures. This was also extracted from GitHub, more specifically from the repository of Oxford.  
+  
+```{r owid, message = FALSE, warning = FALSE}
+
+# OWID Covid Data Path
+owidURL = "https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/owid-covid-data.csv"
+
+# Read COVID Data
+covidData = as.data.frame(read_csv(owidURL))
+
+# Identify Dimensions of Covid Data
+dim(covidData)
+
+```
+  
+The Our World in Data contains 67 observable variables of interest, with the number of rows increasing daily as new data is added. Each observation contains the `date`, `location` and `iso_code` of each observation, with the relevant metrics of case numbers, vaccinations, stringency index and HDI. The format of this data can be found below.  
+  
+```{r owid2, message = FALSE, warning = FALSE, results = 'hide'}
+
+# Convert date column to actual date values
+covidData$date = as.Date(covidData$date, "%Y-%m-%d")
+# Show top observations of dataset
+colnames(covidData)
+
+
+```
+  
+Some processing will be required to ensure that data in both datasets are identical to ensure joining. By using the OWID data as the baseline, this ensures that the Oxford data can be processed to follow the same format to ensure the inner join is computed correctly.
+
+## Oxford Covid Government Response Tracker
+
+The Oxford CGRT data provided includes multiple files of data for each location. It was decided that an inner join was to be computed using the `iso_code` from the OWID data, and `country_code` in the Oxford datasets. Furthermore, the dates represented as columns in the Oxford data would have to be transformed into columns to ensure that joining would be flawless.  
+  
+```{r oxford1, warning = FALSE, message = FALSE, results = 'hide'}
+
+# Create string array of all files to load in from Oxford Dataset
+oxSuffixes = c("c1_school_closing.csv","c2_workplace_closing.csv","c3_cancel_public_events.csv",
+               "c4_restrictions_on_gatherings.csv","c5_close_public_transport.csv",
+               "c6_stay_at_home_requirements.csv","c7_movementrestrictions.csv","c8_internationaltravel.csv",
+               "e1_income_support.csv","e2_debtrelief.csv","h1_public_information_campaigns.csv",
+               "h2_testing_policy.csv", "h3_contact_tracing.csv", "h6_facial_coverings.csv",
+               "h7_vaccination_policy.csv", "h8_protection_of_elderly_people.csv")
+
+# Identify location of Oxford Data on Github so that the file suffixes above can be iterated through
+prefixURL = "https://raw.githubusercontent.com/OxCGRT/covid-policy-tracker/master/data/timeseries"
+
+```
+  
+## Data Join
+
+To join the data, the two variables decided to have the inner join computed on included `iso_code` and `date`. For this to occur, the processing of the Oxford data had to be computed within the loop. These processes included dropping parts of the file name to create the variable name, in addition to extracting columns from the dataset due to it being unnecessary.  
+
+```{r oxford2, warning = FALSE, message = FALSE, results = 'hide'}
+
+vec = c()
+# 
+for(i in 1:length(oxSuffixes)){
+  # Concatenate the link to create the URL to load data
+  link = paste(prefixURL,oxSuffixes[i],sep = "/")
+  # Convert concatenated strings into URL
+  dataURL = url(link)
+  # Load data using read_csv
+  oxData = read_csv(dataURL)
+  # Drop specific parts of the file name
+  stringSub = str_sub(oxSuffixes[i],4,-5)
+  # Create File Name
+  varName = append(vec,stringSub)
+  # Extract from all rows of data, the column `...1` and `country_name`
+  oxData = subset(oxData, select = -c(...1,country_name))
+
+  # Pivot Oxford Data to the same format as the OWID Data
+  mergeData = oxData %>%
+    pivot_longer(!country_code, names_to = "date", values_to = stringSub)
+  # Amend the date values to ensure that it is in the same format
+  mergeData$date <- as.Date(mergeData$date,"%d%b%Y")
+  # Convert variable names to be identical to the OWID Data for merging
+  mergeData = rename(mergeData,iso_code = country_code)
+  # Compute a join of the data, by `iso_code` followed by `date`. Disregard values that do not sit within the intersection of the two datasets.
+  covidData = merge(x = covidData, y = mergeData, by = c("iso_code","date"))
+}
+
+```
+  
+Further renaming of columns was required, as well as processing of the date values from strings to dates to ensure that joining was computed without issues and properly. `iso_code` was selected as a merge variable due to locations having potentially different names in the data listings. As such, using the `iso_code` eliminates the potential effect that these differences have on the overall data. The date is used in the join to compute the correct values of the government response for the specific location on a specific day. As such, once the data is joined the following dimensions can be found.  
+  
+```{r oxford3, warning = FALSE, message = FALSE}
+dim(covidData)
+```
+  
+There are now 83 variables observed, which adds on the 16 different Oxford datasets available, which includes one observation per dataset.  
+  
+## Data Clustering  
+
+
+```{r clust1, warning = F, message = F, results = 'hide'}
+# Select location and HDI
+selection <- covidData %>% select(location, human_development_index)
+
+# Remove NA Values of HDI
+selection <- na.omit(selection)
+
+# Identify unique locations
+uniqueLoc <- unique(selection$location)
+
+
+# Create an empty data frame to append data into, set up counting variable
+df2 = data.frame()
+count = 1
+
+# Perform loop to locate index of first occurrence of location
+for (i in 1:length(uniqueLoc)){
+  index = which(selection$location == uniqueLoc[count])[1]
+  print(index)
+  df2 = rbind(df2, selection[index,])
+  count = count + 1
+}
+
+# Remove old index and make the locations the row names
+df2 = df2 %>% remove_rownames %>% column_to_rownames(var = "location")
+
+# Compute distance matrix using Euclidean distances
+distMat = dist(df2,method = "euclidean")
+
+# Compute hierarchal clustering
+hClusts = hclust(distMat,method = "average")
+
+# Construct the number of clusters and identify locations in each cluster
+fit = cutree(hClusts, k = 6)
+fit
+table(fit)
+
+# Identify location and cluster numbers
+clusterNo = data.frame(fit)
+
+# Add location name to the dataframe
+clusterNo <- rownames_to_column(clusterNo,"location")
+
+# Compute join between the clusters and the existing covid Data
+covidData2 = merge(x = covidData, y = clusterNo, by = c("location"))
+
+# Adjust column name
+colnames(covidData2)[84] <- "hdiCluster"
+
+
+```
+
+  
+The clustering processes chosen was hierarchical clustering on HDI. It was found that six clusters led to an ideal grouping system which provided logical results, where the groups were of a decent size and comparable.  
+  
+```{r, warning = FALSE, message = FALSE, fig.cap="Figure 1 - Cluster"}
+library(maps)
+library(sqldf)
+library(gsubfn)
+library(proto)
+library(RSQLite)
+# read data
+cluster_data = read.csv("https://raw.github.sydney.edu.au/thol6150/data3888c2/master/withclusters.csv?token=AAAANE4DLTLYDPKKK6O62V3CUAXHQ")
+world_map = map_data("world2")
+# select the columns that we will use
+a = 'select location, hdi_cluster from cluster_data'
+result = sqldf(a)
+clustered_location = unique(result)
+# match the countries in world_map and cluster_data that have different names
+for( i in 1:length(clustered_location$location)){
+  if ( clustered_location$location[37] == 'Congo' ){
+    clustered_location$location[37] = 'Republic of Congo'
+  }
+  if ( clustered_location$location[i] == 'Democratic Republic of Congo'){
+    clustered_location$location[i] = 'Democratic Republic of the Congo'
+  }
+  if ( clustered_location$location[i] == 'United States'){
+    clustered_location$location[i] = 'USA'
+  }
+  if ( clustered_location$location[i] == 'United Kingdom' ){
+    clustered_location$location[i] = 'UK'
+  }
+  if ( clustered_location$location[i] == 'Czechia'){
+    clustered_location$location[i] = 'Czech Republic'
+  }
+  if ( clustered_location$location[i] =='Timor' ){
+    clustered_location$location[i] = 'Timor-Leste'
+  }
+  if ( clustered_location$location[i] == 'Trinidad and Tobago' ){
+    clustered_location$location[i] = 'Trinidad'
+  }
+  if ( clustered_location$location[i] == "Cote d'Ivoire"){
+    clustered_location$location[i] = 'Ivory Coast'
+  }
+  if ( clustered_location$location[i] == 'Eswatini' ){
+    clustered_location$location[i] = 'Swaziland'
+  }
+}
+# join the two table
+clustered_world_map = left_join(world_map,clustered_location,by = c('region' = 'location'))
+library(plotly)
+# make a world map plot with highlight on cluster 3
+ggplot(clustered_world_map,aes(x = long, y = lat,group = group, text = region,fill = hdi_cluster == '3'))+
+      geom_polygon(colour = "gray50")+
+      scale_fill_manual(values = c('grey','red'))+
+      guides(fill=guide_legend(title=NULL)) + theme(legend.position = "none")+
+      xlab("Longitude")+
+      ggtitle("Cluster 3 - Very High HDI locations") + theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+      theme(axis.title = element_text(face = "bold")) + 
+
+      ylab("Latitude")-> p
+    
+ggplotly(p,tooltip = c("region"))
+```
+
+
+
+
+# Final Model  
+  
+## Freedom Score
+  
+The self-derived freedom score was used as a metric to analyse the freedoms that certain locations were afforded during the pandemic, with a score of 100 depicting a restriction-free response, and the opposite having a score of 0. Furthermore, the Oxford stringency score takes these restrictions with equal weighting values, however it was felt that some restrictions bore more weight on freedom of society, and as such reclassification of weights was conducted. The weightings for this new freedom score used incremental weighting based off small-scale survey data.  This determined an aggregate score to correctly determine the freedom score. By aggregating the scores and normalising through the maximum aggregated score, the new freedom score was computed and displayed from a scale of 0-100. This process can be expressed in the equation below.  
+
+$$ FS = 100 \times \bigg( 1 - \bigg(\frac{\sum_1^n W_n \times AS_n}{\sum_1^nW_n \times AS_{n_{max}}}\bigg) \bigg)$$
+
+$AS$ refers to the attribute score, and $W$ refers to the relevant weighting for each attribute considered for the freedom score.
+
+```{r FS, message = F, warning = F, results = 'hide'}
+
+## Compute Maximum possible policy score for normalisation of data
+maxC1 = max(covidData2$school_closing,na.rm = TRUE)
+maxC2 = max(covidData2$workplace_closing,na.rm = TRUE)
+maxC3 = max(covidData2$cancel_public_events,na.rm = TRUE)
+maxC4 = max(covidData2$restrictions_on_gatherings,na.rm = TRUE)
+maxC5 = max(covidData2$close_public_transport,na.rm = TRUE)
+maxC6 = max(covidData2$stay_at_home_requirements,na.rm = TRUE)
+maxC7 = max(covidData2$movementrestrictions,na.rm = TRUE)
+maxC8 = max(covidData2$internationaltravel,na.rm = TRUE)
+maxE1 = max(covidData2$income_support,na.rm = TRUE)
+maxE2 = max(covidData2$debtrelief,na.rm = TRUE)
+maxH1 = max(covidData2$public_information_campaigns,na.rm = TRUE)
+maxH2 = max(covidData2$testing_policy,na.rm = TRUE)
+maxH3 = max(covidData2$contact_tracing,na.rm = TRUE)
+maxH6 = max(covidData2$facial_coverings,na.rm = TRUE)
+maxH7 = max(covidData2$vaccination_policy,na.rm = TRUE)
+maxH8 = max(covidData2$protection_of_elderly_people,na.rm = TRUE)
+
+
+# Calculate normalised policy scores
+covidData2$normC1 = covidData2$school_closing/maxC1
+covidData2$normC2 = covidData2$workplace_closing/maxC2
+covidData2$normC3 = covidData2$cancel_public_events/maxC3
+covidData2$normC4 = covidData2$restrictions_on_gatherings/maxC4
+covidData2$normC5 = covidData2$close_public_transport/maxC5
+covidData2$normC6 = covidData2$stay_at_home_requirements/maxC6
+covidData2$normC7 = covidData2$movementrestrictions/maxC7
+covidData2$normC8 = covidData2$internationaltravel/maxC8
+covidData2$normE1 = covidData2$income_support/maxE1
+covidData2$normE2 = covidData2$debtrelief/maxE2
+covidData2$normH1 = covidData2$public_information_campaigns/maxH1
+covidData2$normH2 = covidData2$testing_policy/maxH2
+covidData2$normH3 = covidData2$contact_tracing/maxH3
+covidData2$normH6 = covidData2$facial_coverings/maxH6
+covidData2$normH7 = covidData2$vaccination_policy/maxH7
+covidData2$normH8 = covidData2$protection_of_elderly_people/maxH8
+
+# Maximum possible weighted freedom score
+maxFreeScore = 1*maxC8 + 1.25 * maxC1 + 1.5 * maxC2 + 1.75 * maxC3 + 2 * maxC4 + 2.25 * maxC5 + 2.5 * maxC7 + 2.75 * maxC6
+
+## Compute Freedom Scores
+covidData2$freeScore = (1 - 
+                          ((1.25 * covidData2$school_closing + 1.5 * covidData2$workplace_closing
+                           + 1.75 * covidData2$cancel_public_events+ 2 * covidData2$restrictions_on_gatherings
+                           + 2.25 * covidData2$close_public_transport + 2.75 * covidData2$stay_at_home_requirements
+                           + 2.5 * covidData2$movementrestrictions + covidData2$internationaltravel)/maxFreeScore))*100
+
+```
+
+  
+## Performance Index  
+  
+In similar fashion to the freedom score, a performance index was crucial to be developed to ensure that a metric exists to compare locations in their responses to the pandemic. These performance values were explored using normalised data, provided in the form of new cases and new deaths per million of the population. The values were scaled with deaths being slightly heavier than cases, due to deaths resulting in loss of human life, but reduced infectivity. These combined values were then normalised and transformed using a logarithmic transformation, to introduce greater disparity due to the data being left-skewed. This disparity allows for greater separation of the higher-performing locations for better visualisation and understanding. The equations to depict this score calculation can be found below:  
+  
+
+$$PSC = \log(nCasePM + 1.25 \times nDeathPM)$$
+  
+PSC is the calculated performance score calculated to determine the normalising factors to fully compute the final performance score, with new cases per million and new deaths per million included.  
+  
+The corresponding maximum and minimum calculated PS values were collated to use for normalisation and were denoted as $PSC_{min}$ and $PSC_{max}$. The formula for the final performance score can be found below.  
+  
+$$ PS_{final} = 100 \times \bigg(1 - \frac{(\log(nCPM + 1.25 \times nDPM) + |PSC{min}|}{PSC_{max} - PSC_{min}}\bigg) $$
+  
+Noting that the logarithm of 0 is not obtainable, this value is manually decoded to equal 100, as it implies perfect performance.
+
+
+```{r PS, warning = F, message = F, results = 'hide'}
+
+# Compute Maximum values 
+maxCPM = max(covidData2$new_cases_per_million, na.rm = TRUE)
+maxDPM = max(covidData2$new_deaths_per_million, na.rm = TRUE)
+
+# Extract cases and deaths per million
+CPM = covidData2$new_cases_per_million
+DPM = covidData2$new_deaths_per_million
+
+# Calculate combined normalised values
+combinedPM = CPM + 1.25 * DPM
+
+# Find maximum and minimum combined values
+maxCombined = max(combinedPM,na.rm = TRUE)
+minCombined = min(combinedPM,na.rm = TRUE)
+
+# Use a log scale to increase disparity in scores
+covidData2$performanceScoreCalc = log(CPM + 1.25 * DPM)
+
+# Extract minimum and maximum scores for performance
+minPerfScore = min(covidData2$performanceScoreCalc[is.finite(covidData2$performanceScoreCalc)], na.rm = TRUE)
+maxPerfScore = max(covidData2$performanceScoreCalc, na.rm = TRUE)
+
+# Find the difference to normalise the scores
+distPerfScore = maxPerfScore - minPerfScore
+
+# Normalised score
+covidData2$performanceScore = (1 - (log(CPM + 1.25 * DPM) + abs(minPerfScore))/distPerfScore) * 100
+
+# Change negative infinity scores to 100 - log of 0 cases and deaths = a score of 100 and therefore is good
+covidData2$performanceScore[which(is.infinite(covidData2$performanceScore))] = 100
+
+```
+  
+## Overall Index  
+  
+The overall index was a summation of the freedom score and the performance index, with the performance index given preferential weighting as it was deemed more impactful towards a location's performance. However, it shouldn't be retracted that freedom doesn't affect performance.
+
+
+
+
+  
+$$Overall = FS + 1.25 \times PS$$
+
+
+```{r OS, warning = F, message = F, results = 'hide'}
+# Compute combined score
+covidData2$overallScore = (1.25 * covidData2$performanceScore + covidData2$freeScore)/2.25
+# Select Relevant Columns for Analysis
+finalDF <- select(covidData2, c(1:16,48:50,63,68:104))
+finalDF <- select(finalDF,-c(55))
+
+# Reorder Data in chronological order
+finalDF <- finalDF[order(finalDF$iso_code, finalDF$date),]
+
+# Change column names to be meaningful
+colnames(finalDF)
+
+finalDF %>% 
+  rename(
+    TC = total_cases,
+    NC = new_cases,
+    NCS = new_cases_smoothed,
+    TD = total_deaths,
+    ND = new_deaths,
+    NDS = new_deaths_smoothed,
+    TCPM = total_cases_per_million,
+    NCPM = new_cases_per_million,
+    NCPMS = new_cases_smoothed_per_million,
+    TDPM = total_deaths_per_million,
+    NDPM = new_deaths_per_million,
+    NDPMS = new_deaths_smoothed_per_million,
+    Stringency = stringency_index,
+    PopDensity = population_density,
+    HDI = human_development_index,
+    C1 = school_closing,
+    C2 = workplace_closing,
+    C3 = cancel_public_events,
+    C4 = restrictions_on_gatherings,
+    C5 = close_public_transport,
+    C6 = stay_at_home_requirements,
+    C7 = movementrestrictions,
+    C8 = internationaltravel,
+    E1 = income_support,
+    E2 = debtrelief,
+    H1 = public_information_campaigns,
+    H2 = testing_policy,
+    H3 = contact_tracing,
+    H6 = facial_coverings,
+    H7 = vaccination_policy,
+    H8 = protection_of_elderly_people
+  )
+
+
+```
+
+
+
+# Results  
+  
+An example of how countries can conduct investigations using our product is demonstrated below:  
+  
+```{r, warning=F, message = FALSE, fig.cap="Figure 2 - Results"}
+
+require(ggplot2)
+require(scales)
+# convert to factor format
+data_score <-read.csv("https://raw.github.sydney.edu.au/thol6150/data3888c2/master/covidDataScored.csv?token=AAABQQARVIGQPSYJIBAR2GLCTV6BO", stringsAsFactors = FALSE,check.names =  FALSE)[-1]
+# change to date
+data_score$date <- as.Date(data_score$date, format = "%Y-%m-%d")
+# change to numeric format
+data_score$overallScore = as.double(data_score$overallScore)
+# select New Zealand subset
+data_NZ <- data_score[data_score$location == 'New Zealand',]
+g <- ggplot(data_NZ, aes(x = date, y = overallScore,
+                           color = location)) +
+      geom_line(lwd = 1)+
+      theme_bw() +
+      ylab("Total Scores") +
+      scale_y_continuous(labels = scales::comma) +
+      scale_x_date(date_breaks = "1 month",labels = date_format("%Y-%b")) +
+      scale_color_viridis_d() +
+      theme(axis.text.x = element_text(angle = 90)) +
+      labs(color = "Country/Region", caption = "Figure 2: Results") +
+      xlab("Date") + ggtitle("New Zealand Total Score over time") + 
+      theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+      theme(axis.title = element_text(face = "bold"))
+
+
+    
+    g <-plotly::ggplotly(g,tooltip = c("date","overallScore",'location')) 
+g
+```
+  
+Taking New Zealand as an example, we can see that in April 2020, due to the boom of the COVID-19, the New Zealand government adopted the strictest lockdown policy. Despite New Zealand's overall performance score dropping significantly here, due to the timely implementation of their lockdown policy, the spread of COVID-19 was well controlled. This is demonstrated through their new case numbers which were quickly cleared.   
+  
+In August 2020, COVID-19 boomed again in New Zealand. This time, the New Zealand government did not take the strictest lockdown measures at the beginning of the outbreak. Therefore, although the overall score currently was lower, it was still higher than the overall score in April of the same year. New Zealand's lockdown policy this time was also effective but because the initial lockdown policy was not strict enough, New Zealand's overall score rose about a half a month slower than that in April before reaching the peak.  
+  
+In mid-August 2021, the third outbreak occurred in New Zealand. This time, the New Zealand government adopted the same lockdown policy as in August 2020. However, as there was an outbreak of a new variant, Omicron, which is highly contagious, less stringent lockdown measures had less of an effect. 
+   
+# Evaluation    
+As our product is reliant upon the accuracy of our performance score, we used three alternative model construction methods to determine whether our initial model is accurate. These methods were repeated cross fold validation, logistic regression, and random forest. We took the performance score as the dependent variable and the variables used in the original model as our independent variables. 
+  
+After constructing a new model, we checked the importance of each independent variable for the model through a variable importance output. We then used the importance of each independent variables to influence our weightings for the respective model. We use these weightings to create a new performance score based on each type of method. To ensure consistency with our initial method in which the weights summed to 14, we kept the sum of weights as 14. Finally, we normalized our test scores using a linear transformation so that our final score stays in the 0-100 range.  
+  
+```{r, results = 'hide', message = F, warning = F}
+library(lattice)
+library(ggplot2)
+library(caret)
+library(rpart)
+library(C50)
+library(readr)
+
+# read the data
+data=read_csv("https://raw.github.sydney.edu.au/thol6150/data3888c2/master/covidDataScored.csv?token=AAABQQARVIGQPSYJIBAR2GLCTV6BO")
+
+# set seed
+set.seed(3888)
+
+# repeated cv
+# set the grouping method
+ind = sample(2,nrow(data),replace = TRUE,prob = c(0.7,0.3))
+# Divide the data into train set and test set
+trainset = data[ind == 1,]
+testset = data[ind == 2,]
+# set the method "repeated cv" for training the data
+control = trainControl(method = "repeatedcv",number = 10,repeats = 3)
+# build the model
+model = train(performanceScore~school_closing+workplace_closing+cancel_public_events+restrictions_on_gatherings+close_public_transport+stay_at_home_requirements+movementrestrictions+internationaltravel,data = trainset,na.action = na.omit,method = "rpart",preProcess = "scale" ,trControl = control)
+# find the importance of variables
+importance = varImp(model,scale = FALSE)
+# Compute Maximum possible policy score for normalisation of data
+maxC1 = max(data$school_closing,na.rm = TRUE)
+maxC2 = max(data$workplace_closing,na.rm = TRUE)
+maxC3 = max(data$cancel_public_events,na.rm = TRUE)
+maxC4 = max(data$restrictions_on_gatherings,na.rm = TRUE)
+maxC5 = max(data$close_public_transport,na.rm = TRUE)
+maxC6 = max(data$stay_at_home_requirements,na.rm = TRUE)
+maxC7 = max(data$movementrestrictions,na.rm = TRUE)
+maxC8 = max(data$internationaltravel,na.rm = TRUE)
+# Maximum possible weighted testing score
+maxtestScore1 = 14*importance$importance[2,]/sum(importance$importance)*maxC8 + 14*importance$importance[4,]/sum(importance$importance) * maxC1 
++ 14*importance$importance[6,]/sum(importance$importance) * maxC2 + 14*importance$importance[1,]/sum(importance$importance) * maxC3 + 14*importance$importance[3,]/sum(importance$importance) * maxC4 +14*importance$importance[8,]/sum(importance$importance)* maxC5 
++ 14*importance$importance[7,] /sum(importance$importance)* maxC7 + 14*importance$importance[5,] /sum(importance$importance)* maxC6
+# build the testing score
+Testscore1=(1 - 
+              (14*importance$importance[4,]/sum(importance$importance) * data$school_closing + 14*importance$importance[6,] /sum(importance$importance)* data$workplace_closing
+               + 14*importance$importance[1,]/sum(importance$importance) * data$cancel_public_events+ 14*importance$importance[3,]/sum(importance$importance)* data$restrictions_on_gatherings
+               + 14*importance$importance[8,]/sum(importance$importance) * data$close_public_transport + 14*importance$importance[5,] /sum(importance$importance)* data$stay_at_home_requirements
+               + 14*importance$importance[7,] /sum(importance$importance)* data$movementrestrictions + 14*importance$importance[2,]/sum(importance$importance)*data$internationaltravel)/maxtestScore1)*100
+
+
+
+
+
+# logistic regression
+# build the logistic regression model
+logistic_function=glm(performanceScore~school_closing+workplace_closing+cancel_public_events+restrictions_on_gatherings+close_public_transport+stay_at_home_requirements+movementrestrictions+internationaltravel,data = trainset,na.action = na.omit)
+# Check out the properties of this model
+summary(logistic_function)
+# find the importance of variables
+importance_logistic=varImp(logistic_function,scale = FALSE)
+# Maximum possible weighted testing score
+maxtestScore2 = 14*importance_logistic[8,]/sum(importance_logistic)*maxC8 + 14*importance_logistic[1,]/sum(importance_logistic) * maxC1 
++ 14*importance_logistic[2,]/sum(importance_logistic) * maxC2 + 14*importance_logistic[3,]/sum(importance_logistic) * maxC3 + 14*importance_logistic[4,]/sum(importance_logistic) * maxC4 +14*importance_logistic[5,]/sum(importance_logistic)* maxC5 
++ 14*importance_logistic[7,] /sum(importance_logistic)* maxC7 + 14*importance_logistic[6,] /sum(importance_logistic)* maxC6
+# build the testing score
+Testscore2=(1 - 
+              (14*importance_logistic[1,]/sum(importance_logistic) * data$school_closing + 14*importance_logistic[2,] /sum(importance_logistic)* data$workplace_closing
+               + 14*importance_logistic[3,]/sum(importance_logistic) * data$cancel_public_events+ 14*importance_logistic[4,]/sum(importance_logistic)* data$restrictions_on_gatherings
+               + 14*importance_logistic[5,]/sum(importance_logistic) * data$close_public_transport + 14*importance_logistic[6,] /sum(importance_logistic)* data$stay_at_home_requirements
+               + 14*importance_logistic[7,] /sum(importance_logistic)* data$movementrestrictions + 14*importance_logistic[8,]/sum(importance_logistic)*data$internationaltravel)/maxtestScore2)*100
+
+
+
+
+# Random forest
+library(randomForest)
+# build the random forest model
+rf<-randomForest(performanceScore~school_closing+workplace_closing
+                 +cancel_public_events+restrictions_on_gatherings
+                 +close_public_transport+stay_at_home_requirements
+                 +movementrestrictions+internationaltravel, data=trainset, mtry=7, ntree=10, importance=T,na.action = na.omit )
+# caculate the sum of variable importance
+rf_sum=sum(rf$importance[1:8])
+# Maximum possible weighted testing score
+maxtestScore3 = 14*rf$importance[8]/rf_sum*maxC8 
++ 14*rf$importance[1]/rf_sum * maxC1 
++ 14*rf$importance[2]/rf_sum* maxC2 + 14*rf$importance[3]/rf_sum* maxC3 
++ 14*rf$importance[4]/rf_sum* maxC4 +14*rf$importance[5]/rf_sum* maxC5 
++ 14*rf$importance[7]/rf_sum* maxC7 + 14*rf$importance[6]/rf_sum* maxC6
+
+# build the testing score
+Testscore3=(1 - 
+              (14*rf$importance[1]/rf_sum* data$school_closing + 14*rf$importance[2]/rf_sum* data$workplace_closing
+               + 14*rf$importance[3]/rf_sum* data$cancel_public_events
+               + 14*rf$importance[4]/rf_sum* data$restrictions_on_gatherings
+               + 14*rf$importance[5]/rf_sum* data$close_public_transport + 14*rf$importance[6]/rf_sum* data$stay_at_home_requirements
+               + 14*rf$importance[7]/rf_sum* data$movementrestrictions+ 14*rf$importance[8]/rf_sum*data$internationaltravel)/maxtestScore3)*100
+
+# normalization of previous testing scores using Linear transformation(because of the existence of negative numbers, log cannot be used for transformation)
+t1=(Testscore1-min(Testscore1,na.rm = TRUE))/(max(Testscore1,na.rm = TRUE)-min(Testscore1,na.rm = TRUE))*100
+t2=(Testscore2-min(Testscore2,na.rm = TRUE))/(max(Testscore2,na.rm = TRUE)-min(Testscore2,na.rm = TRUE))*100
+t3=(Testscore3-min(Testscore3,na.rm = TRUE))/(max(Testscore3,na.rm = TRUE)-min(Testscore3,na.rm = TRUE))*100
+
+# choose the data from different countries
+data0=data.frame(data$date,data$location,data$freeScore,t1,t2,t3)
+data1=data0[data0$data.location=="Australia",]
+data2=data0[data0$data.location=="Canada",]
+data3=data0[data0$data.location=="United States",]
+
+# Test for 3 locations by plotting freedom score and three testing score together
+#p1<-ggplot(data1, aes(x=data.date))+geom_line(aes(y=data.freeScore, color="Freedom Score"))+geom_line(aes(y=t1, color="Repeated cv"))+geom_line(aes(y=t2, color="Logistic Regression"))+geom_line(aes(y=t3, color="Random Forest"))+labs(x = "Date", y = "Score", title = "Comparison of Freedom Score and Testing Scores for Australia")
+p2<-ggplot(data2, aes(x=data.date))+geom_line(aes(y=data.freeScore, color="Freedom Score"))+geom_line(aes(y=t1, color="Repeated cv"))+geom_line(aes(y=t2, color="Logistic Regression"))+geom_line(aes(y=t3, color="Random Forest"))+labs(x = "Date", y = "Score Value", title = "Comparison of Freedom Score and Testing Scores for Canada") + theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+  theme(axis.title = element_text(face = "bold"))
+
+#plotting freedom score and three testing score together
+p3<-ggplot(data3, aes(x=data.date))+geom_line(aes(y=data.freeScore, color="Freedom Score"))+geom_line(aes(y=t1, color="Repeated cv"))+geom_line(aes(y=t2, color="Logistic Regression"))+geom_line(aes(y=t3, color="Random Forest"))+labs(x = "Date", y = "Score Value", title = "Comparison of Freedom Score and Testing Scores for United States") + theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+  theme(axis.title = element_text(face = "bold"))
+
+
+```
+
+
+```{r, warning=F, fig.cap="Figure 3 - Scores"}
+# put two graphs in one graph
+par(mfrow = c(1,2))
+# plot the graph for Canada and the United States
+p2
+p3
+```
+  
+The above pictures above take Canada and the United States as an example, other locations were tested upon and showed similar results. According to the comparison of the four scores, we can see that although the values of our performance scores and the three other test scores are not the same, their values are very close. Additionally, the trends of these four scores are the same. From here we can conclude that our performance score is accurate.  
+  
+# Shiny App  
+  
+This shiny app has a total of 5 pages, namely home, methodology, cluster, prediction and about page. In the home, methodology and about pages, users can learn most of the information about this shiny app, such as: the purpose of this project, the source of data, the analysis methods used in this project, etc.  
+  
+Most of the functions of this shiny app are concentrated on the cluster and prediction pages, which are the core of the entire project as well. The Cluster page is divided into two sections, an input section on the left and an output section on the right. The user can select the interested country and the cluster corresponding to this country on the left, as well as a specific period that the user is interested in. After the user selects, the output section on the right would display information related to the selected country. The first picture on the right will highlight all the countries included in the selected cluster in red on the world map so that the user has a clearer understanding of the selected cluster. The second picture will show a line graph of the score of the selected country in the selected period. Below these two pictures, the user can see some information related to the selected cluster, such as the average score of the cluster, the best and worst two performing countries within this cluster, and the average score for the selected countries. Users can choose to compare the country A they are interested in with the country B that performs better in the same cluster. Moreover, in the prediction page, the government can input the population and the HDI of the country, and the Shiny app will give the score that the country should achieve according to the input data. Comparing this score with the actual score, the government can know whether there is work needed to make their country perform better.  
+  
+Although we did not cooperate with students from other disciplines, it is still a manifestation of multidisciplinary cooperation. Commerce students were used to develop our strategy, storyline and how to ensure that we are marketing to our target audience. Additionally, advanced computing students generated our graphs and the creation of our score.  
+  
+# Discussion  
+  
+Upon marker's comments in the Presentation and Demonstration the product's following areas were questioned to improve the product when looking retrospectively and in the future:  
+  
+1. Consider the different methods of what counts as a case and does not. How can we account for reporting inaccuracies for each location.
+To address this area, each of the 174 countries would need to have their COVID-19 case methodologies examined. Therefore, a smaller subset of locations would need to be considered as trying to accurately account for this would be unfeasible. For example, the European Centre for Disease Prevention and Control (ECDC) defines a COVID-19 case a one containing at least a single symptom of cough, fever, shortness of breath, sudden onset of anosmia, ageusia or dysgeusia with detection of SARS-CoV-2 nucleic acid. This would add a layer of consistency regarding case numbers if the ECDC dataset was used as opposed to the OWID dataset.  
+  
+2. Consider the different strains of COVID-19 when the Performance Scores were measured and how this is impacted with time across the different waves. 
+Different strains influence the requirements of citizens regarding social distancing, contact tracing and vaccinations. For instance, the Omicron variant is more contagious than Delta One method that could be considered for future work is that Omicron cases should have less of an influence on freedom score due to its severity such that it does not decrease the total score. In essence, greater restrictions on movement due to increased Omicron cases should indeed increase the total score rather than decreasing it. However, cases are not reported according to strain but rather just by whether a person has COVID-19 or not.  
+  
+One area that was considered during the early stage of the product was to have some measure of the minimum requirements needed to yield a user's inputted score given that the user chose a location. I.e. what combination of social distancing measures and vaccinations are needed to attain a score of 50. What this would aim to achieve is finding the appropriate balance between freedom and performance to achieve a total score. For instance, a lack of freedom could cause civil unrest despite the measures being ineffective in the performance score. This idea was scrapped due to the complexity of it for instance given the equation from the overall index there are infinitely many solutions to attaining an overall/total score of 50 and it would be difficult to have a generic solution.  
+  
+# Conclusion
+Overall, the project was an interesting experience for the team. Using the freedom and performance scores to create a total score created interesting results such that developed nations often did worse than developing counterparts. We discovered that developed locations at least those that shared a border with another location did worse overall than those that were on an island and developing nations could have done better overall as a result from lower international and domestic travel facilities. Nonetheless, this project was based on many assumptions and so for future work, limiting the project to one geographical region for simplicity and consistency is a desirable course of action. Furthermore, considering the various facets of COVID-19 such as variant type and each location's data collection methods we aim to address this in future work to add a layer of legitimacy toward the project. If there was one thing to be picked up upon when reflecting on the project is that COVID-19 has a greater impact on developed locations and so acting quickly with restrictions is valid even if personal liberties are forfeited.  
+  
+# Student contributions  
+  
+Joshua Stotski was responsible for initial idea generation and establishing a clear direction. He aided the functionality of the project including the aim, motivation, and story. He created the PowerPoint presentation and wrote up and edited sections of the report. He was also responsible for conducting the weekly meeting minutes.  
+  
+Darryl Yip was responsible for creating the method through deciding the weightings needed for our performance and freedom score. He was responsible for writing up this method section and aiding in the initial idea generation and storyline. Darryl generated the data and tuned the machine. He also conducted initial data cleaning.  
+  
+Tony Hollmann was responsible for the data processing and analysis. He initiated and maintained the groups github. He wrote the code for the data cleaning and conducted the joining of our data. He was also responsible for write-up of the report including discussion and conclusion sections. He also helped in the evaluation strategy section.  
+  
+Tiancong Cheng was also responsible for the data processing and analysis. She was responsible for the writing of the results section and making observations. Additionally, she wrote the code for the evaluation section and did the initial write up of the results and evaluation section.  
+  
+Jeff Yang was responsible for deploying the final product through creation of the shiny app. Jeff designed and coded the score plot, result table, prediction page, front page and the about us page. Jeff was also responsible for writing the section of the shiny app in the report.  
+  
+Leslie Zhao was also responsible for deploying the final product through the creation of the shiny app. Leslie aided in the sections mentioned above, created the world map separated by individual clusters and generated the input functions in the cluster page. Leslie was also responsible for aiding the writing of the shiny app section in the report.  
+  
+# References
+Bloomberg. (2022). The Covid Resilience Ranking The Best and Worst Places to Be as Covid Flare-Ups Break Records. Retrieved from https://www.bloomberg.com/graphics/covid-resilience-ranking/?fbclid=IwAR2GOm-AKEcl0JSQ3KB3fic9x3Ft1cQQ0yAKxR6kwfEHBrfAwhcO8kZfpkI  
+  
+European Centre for Disease Prevention and Control. (2020). *Case definition for coronavirus disease 2019 (COVID-19), as of 3 December 2020*. Retrieved from https://www.ecdc.europa.eu/en/covid-19/surveillance/case-definition  
+  
+Lowry Institute. (2021). Covid Performance Index DECONSTRUCTING PANDEMIC RESPONSES What impact have geography, political systems, population size, and economic development had on COVID-19 outcomes around the world?. Retrieved from https://interactives.lowyinstitute.org/features/covid-performance/?fbclid=IwAR2KzlVzXeqneE8w3WZrm3uIdTgpEXd7v1JDPL7Iv7H_MrPi306kmK2mA34  
+  
+Our World in Data. (2022). covid-19-data. Retrieved from https://github.com/owid/covid-19-data  
+
+Troeger, C. (2022). Just How Do Deaths Due to COVID-19 Stack Up? | Think Global Health. Retrieved from  https://www.thinkglobalhealth.org/article/just-how-do-deaths-due-covid-19-stack
+  
+University of Oxford. (2022). Oxford Covid-19 Government Response Tracker. Retrieved at https://github.com/OxCGRT  
+  

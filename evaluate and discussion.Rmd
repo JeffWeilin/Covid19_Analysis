@@ -1,0 +1,127 @@
+---
+title: "evaluate and discussion"
+author: "Tina"
+date: '2022-05-30'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+evaluation:
+
+    Because our performance score is composed of death cases and new cases, and our freedom score is composed of multiple variables, here we only discuss the accuracy of the freedom score. We used three methods: repeated cross fold validation, logistic regression and random forest. We take the performance score as the dependent variable and the variables in the free score as the independent variable. After constructing the relevant model, we check the importance of each independent variable for the model, and take the importance of the independent variable as the weight, according to the construction of the free The mode at the time of score builds the new detection score. In order to make the construction method not affect the final score, we keep the sum of weights the same as the freedom score. The euqation shows below:
+
+$$ FS = 100 \times \bigg( 1 - \bigg(\frac{\sum_1^n W_n \times AS_n}{\sum_1^nW_n \times AS_{n_{max}}}\bigg) \bigg)$$
+    
+    Finally we normalize our test score using a linear transformation so that our final score stays in the 0-100 range.
+```{r}
+library(lattice)
+library(ggplot2)
+library(caret)
+library(rpart)
+library(C50)
+data=read.csv("C:/Users/kemoq/Desktop/covidC2DataFinal.csv")
+set.seed(3888)
+
+# repeated vc
+ind = sample(2,nrow(data),replace = TRUE,prob = c(0.7,0.3))
+trainset = data[ind == 1,]
+testset = data[ind == 2,]
+control = trainControl(method = "repeatedcv",number = 10,repeats = 3)
+model = train(performanceScore~school_closing+workplace_closing+cancel_public_events+restrictions_on_gatherings+close_public_transport+stay_at_home_requirements+movementrestrictions+internationaltravel,data = trainset,na.action = na.omit,method = "rpart",preProcess = "scale" ,trControl = control)
+importance = varImp(model,scale = FALSE)
+maxC1 = max(data$school_closing,na.rm = TRUE)
+maxC2 = max(data$workplace_closing,na.rm = TRUE)
+maxC3 = max(data$cancel_public_events,na.rm = TRUE)
+maxC4 = max(data$restrictions_on_gatherings,na.rm = TRUE)
+maxC5 = max(data$close_public_transport,na.rm = TRUE)
+maxC6 = max(data$stay_at_home_requirements,na.rm = TRUE)
+maxC7 = max(data$movementrestrictions,na.rm = TRUE)
+maxC8 = max(data$internationaltravel,na.rm = TRUE)
+maxtestScore1 = 14*importance$importance[2,]/sum(importance$importance)*maxC8 + 14*importance$importance[4,]/sum(importance$importance) * maxC1 
++ 14*importance$importance[6,]/sum(importance$importance) * maxC2 + 14*importance$importance[1,]/sum(importance$importance) * maxC3 + 14*importance$importance[3,]/sum(importance$importance) * maxC4 +14*importance$importance[8,]/sum(importance$importance)* maxC5 
++ 14*importance$importance[7,] /sum(importance$importance)* maxC7 + 14*importance$importance[5,] /sum(importance$importance)* maxC6
+Testscore1=(1 - 
+              (14*importance$importance[4,]/sum(importance$importance) * data$school_closing + 14*importance$importance[6,] /sum(importance$importance)* data$workplace_closing
+               + 14*importance$importance[1,]/sum(importance$importance) * data$cancel_public_events+ 14*importance$importance[3,]/sum(importance$importance)* data$restrictions_on_gatherings
+               + 14*importance$importance[8,]/sum(importance$importance) * data$close_public_transport + 14*importance$importance[5,] /sum(importance$importance)* data$stay_at_home_requirements
+               + 14*importance$importance[7,] /sum(importance$importance)* data$movementrestrictions + 14*importance$importance[2,]/sum(importance$importance)*data$internationaltravel)/maxtestScore1)*100
+
+
+
+
+
+# logistic regression
+logistic_function=glm(performanceScore~school_closing+workplace_closing+cancel_public_events+restrictions_on_gatherings+close_public_transport+stay_at_home_requirements+movementrestrictions+internationaltravel,data = trainset,na.action = na.omit)
+summary(logistic_function)
+importance_logistic=varImp(logistic_function,scale = FALSE)
+maxtestScore2 = 14*importance_logistic[8,]/sum(importance_logistic)*maxC8 + 14*importance_logistic[1,]/sum(importance_logistic) * maxC1 
++ 14*importance_logistic[2,]/sum(importance_logistic) * maxC2 + 14*importance_logistic[3,]/sum(importance_logistic) * maxC3 + 14*importance_logistic[4,]/sum(importance_logistic) * maxC4 +14*importance_logistic[5,]/sum(importance_logistic)* maxC5 
++ 14*importance_logistic[7,] /sum(importance_logistic)* maxC7 + 14*importance_logistic[6,] /sum(importance_logistic)* maxC6
+Testscore2=(1 - 
+              (14*importance_logistic[1,]/sum(importance_logistic) * data$school_closing + 14*importance_logistic[2,] /sum(importance_logistic)* data$workplace_closing
+               + 14*importance_logistic[3,]/sum(importance_logistic) * data$cancel_public_events+ 14*importance_logistic[4,]/sum(importance_logistic)* data$restrictions_on_gatherings
+               + 14*importance_logistic[5,]/sum(importance_logistic) * data$close_public_transport + 14*importance_logistic[6,] /sum(importance_logistic)* data$stay_at_home_requirements
+               + 14*importance_logistic[7,] /sum(importance_logistic)* data$movementrestrictions + 14*importance_logistic[8,]/sum(importance_logistic)*data$internationaltravel)/maxtestScore2)*100
+
+
+
+
+# Random forest
+library(randomForest)
+rf<-randomForest(performanceScore~school_closing+workplace_closing
+                 +cancel_public_events+restrictions_on_gatherings
+                 +close_public_transport+stay_at_home_requirements
+                 +movementrestrictions+internationaltravel, data=trainset, mtry=7, ntree=100, importance=T,na.action = na.omit )
+rf_sum=sum(rf$importance[1:8])
+maxtestScore3 = 14*rf$importance[8]/rf_sum*maxC8 
++ 14*rf$importance[1]/rf_sum * maxC1 
++ 14*rf$importance[2]/rf_sum* maxC2 + 14*rf$importance[3]/rf_sum* maxC3 
++ 14*rf$importance[4]/rf_sum* maxC4 +14*rf$importance[5]/rf_sum* maxC5 
++ 14*rf$importance[7]/rf_sum* maxC7 + 14*rf$importance[6]/rf_sum* maxC6
+
+Testscore3=(1 - 
+              (14*rf$importance[1]/rf_sum* data$school_closing + 14*rf$importance[2]/rf_sum* data$workplace_closing
+               + 14*rf$importance[3]/rf_sum* data$cancel_public_events
+               + 14*rf$importance[4]/rf_sum* data$restrictions_on_gatherings
+               + 14*rf$importance[5]/rf_sum* data$close_public_transport + 14*rf$importance[6]/rf_sum* data$stay_at_home_requirements
+               + 14*rf$importance[7]/rf_sum* data$movementrestrictions+ 14*rf$importance[8]/rf_sum*data$internationaltravel)/maxtestScore3)*100
+
+# normalization using Linear transformation(because of the existence of negative numbers, log cannot be used for transformation)
+t1=(Testscore1-min(Testscore1,na.rm = TRUE))/(max(Testscore1,na.rm = TRUE)-min(Testscore1,na.rm = TRUE))*100
+t2=(Testscore2-min(Testscore2,na.rm = TRUE))/(max(Testscore2,na.rm = TRUE)-min(Testscore2,na.rm = TRUE))*100
+t3=(Testscore3-min(Testscore3,na.rm = TRUE))/(max(Testscore3,na.rm = TRUE)-min(Testscore3,na.rm = TRUE))*100
+
+data0=data.frame(data$date,data$location,data$freeScore,t1,t2,t3)
+data1=data0[data0$data.location=="Australia",]
+data2=data0[data0$data.location=="Canada",]
+data3=data0[data0$data.location=="United States",]
+
+p1<-ggplot(data1, aes(x=data.date))+geom_line(aes(y=data.freeScore, color="Freedom Score"))+geom_line(aes(y=t1, color="Repeated cv"))+geom_line(aes(y=t2, color="Logistic Regression"))+geom_line(aes(y=t3, color="Random Forest"))+labs(x = "Date", y = "Score", title = "Comparison of Freedom Score and Testing Scores for Australia")
+p2<-ggplot(data2, aes(x=data.date))+geom_line(aes(y=data.freeScore, color="Freedom Score"))+geom_line(aes(y=t1, color="Repeated cv"))+geom_line(aes(y=t2, color="Logistic Regression"))+geom_line(aes(y=t3, color="Random Forest"))+labs(x = "Date", y = "Score", title = "Comparison of Freedom Score and Testing Scores for Canada")
+p3<-ggplot(data3, aes(x=data.date))+geom_line(aes(y=data.freeScore, color="Freedom Score"))+geom_line(aes(y=t1, color="Repeated cv"))+geom_line(aes(y=t2, color="Logistic Regression"))+geom_line(aes(y=t3, color="Random Forest"))+labs(x = "Date", y = "Score", title = "Comparison of Freedom Score and Testing Scores for United States")
+p1
+p2
+p3
+```
+
+    The above pictures take Australia, New Zealand and the United States as examples. According to the comparison of the four scores in each picture, we can see that although the values of our free scores and the three test scores are not the same, their values are very close, the trends of these four scores are exactly the same. From here we can conclude that our free score works.
+    
+    
+Discussion:
+# !need to add a graph of New Zealand's overall score there!
+
+    According to the graph of our overall score, we can find the changes in the realization of each country’s response to the new crown during the covid epidemic, and then find out the policies of each country and the epidemic situation when each changes occurred, we can also determine the policies of each government and make suggestions. Taking New Zealand as an example, we can see that in April 2020, due to the boom of the covid, the New Zealand government adopted the strictest lookdown policy, so New Zealand's overall score dropped significantly here, but due to the timely implementation of the lookdown policy, New Zealand's covid was well controlled, their new cases number was quickly cleared, and the new cases was reduced at the same time as the lockdown policy was relaxed, so New Zealand's overall score quickly rose to 100. 
+    In August 2020, the covid boomed again in New Zealand. This time, the New Zealand government did not take the strictest lockdown measures at the beginning of the outbreak. Therefore, although the overall score at this time was lower, it was still higher than the overall score in April of the same year. According to the picture, it can be seen that New Zealand's lookdown policy this time is also effective, but because the initial lookdown policy was not strict enough, New Zealand's overall score rose about half a month slower than that in April before reaching the peak.
+    In mid-August 2021, the third covid epidemic happened in New Zealand. This time, the New Zealand government adopted the same lookdown policy as in August 2020. However, due to the change of the new crown virus, Omicron which is highly contagious. It can be known that at this time, less stringent lookdown measures can no longer have a very good effect. According to our score, we can give the government's measures to deal with the covid in terms of degrees of freedom.
+
+
+
+
+
+
+
+
+

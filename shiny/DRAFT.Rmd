@@ -1,0 +1,205 @@
+---
+title: "Untitled"
+author: '480077299'
+date: '2022-05-10'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+data_score <-read.csv("covidDataScored.csv",dec = ",")[-1]
+data_score$date <- as.Date(data_score$date, format = "%Y-%m-%d")
+data_score$overallScore = round(as.double(data_score$overallScore),digit=2)
+
+
+```
+
+```{r}
+k=
+nrow(data_score[data_score$hdiCluster == 1,])+
+nrow(data_score[data_score$hdiCluster == 2,])+
+nrow(data_score[data_score$hdiCluster == 3,])+
+nrow(data_score[data_score$hdiCluster == 4,])+
+nrow(data_score[data_score$hdiCluster == 5,])+
+nrow(data_score[data_score$hdiCluster == 6,])
+k
+```
+```{r}
+library(data.table)
+
+library(dplyr)
+
+library(formattable)
+
+library(tidyr)
+
+s1 <- sum(data_score[data_score$hdiCluster == 1,]$overallScore,na.rm = TRUE)
+ave1 <- s1/nrow(data_score[data_score$hdiCluster == 1,])
+ave1
+
+df <- as.data.frame(aggregate(data_score[data_score$hdiCluster == 1,]$overallScore,list(data_score[data_score$hdiCluster == 1,]$location), FUN=mean,na.rm =TRUE))
+df %>% top_n(2)  # highest values
+
+```
+
+```{r}
+customGreen0 = "#CBF2C1"
+
+customGreen = "#26501C"
+
+formattable(df, 
+            align =c("l","l"), 
+            list("Country Name"= formatter(
+              "span", style = ~ style(color = "grey",font.weight = "bold")),
+             "Average Score"= color_tile(customGreen0, customGreen)
+              
+))
+```
+
+```{r}
+dim(data_score)
+
+
+```
+
+```{r}
+data = data_score[data_score$location == 'Afghanistan',]
+g <- ggplot(data, aes(x = date, y = overallScore, 
+                      group = location, color = location)) +
+        geom_line(lwd = 1)+
+        theme_bw()+
+        ylab("Number of new cases") +
+        scale_y_continuous(labels = scales::comma) +
+        scale_x_date(date_breaks = "1 month") +
+        scale_color_viridis_d() +
+        theme(axis.text.x = element_text(angle = 90)) +
+        labs(color = "Country/Region") +
+        xlab("")
+g <-plotly::ggplotly(g)
+g
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+cluster_data = read.csv("../withclusters.csv")
+cluster_data
+```
+```{r}
+library(maps)
+world_map = map_data("world2")
+b = unique(world_map$region)
+```
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+library(sqldf)
+library(gsubfn)
+library(proto)
+library(RSQLite)
+library(scales)
+```
+
+```{r}
+a = 'select location, hdi_cluster from cluster_data'
+result = sqldf(a)
+clustered_location = unique(result)
+clustered_world_map = left_join(world_map,clustered_location,by = c('region' = 'location'))
+```
+
+```{r}
+
+c = setdiff(clustered_location$location,b)
+d = setdiff(b,clustered_location$location)
+c
+```
+```{r}
+b
+```
+-- name in world_map = name in clustered data
+Republic of Congo = Congo
+Democratic Republic of the Congo = Democratic Republic of Congo
+USA = United States
+UK = United Kingdom
+Czech Republic = Czechia
+Timor-Leste = Timor
+Trinidad+Tobago = Trinidad and Tobago
+Ivory Coast = Cote d'Ivoire
+Swaziland = Eswatini
+```{r}
+
+for( i in 1:length(clustered_location$location)){
+  if ( clustered_location$location[37] == 'Congo' ){
+    clustered_location$location[37] = 'Republic of Congo'
+  }
+  if ( clustered_location$location[i] == 'Democratic Republic of Congo'){
+    clustered_location$location[i] = 'Democratic Republic of the Congo'
+  }
+  if ( clustered_location$location[i] == 'United States'){
+    clustered_location$location[i] = 'USA'
+  }
+  if ( clustered_location$location[i] == 'United Kingdom' ){
+    clustered_location$location[i] = 'UK'
+  }
+  if ( clustered_location$location[i] == 'Czechia'){
+    clustered_location$location[i] = 'Czech Republic'
+  }
+  if ( clustered_location$location[i] =='Timor' ){
+    clustered_location$location[i] = 'Timor-Leste'
+  }
+  if ( clustered_location$location[i] == 'Trinidad and Tobago' ){
+    clustered_location$location[i] = 'Trinidad'
+  }
+  if ( clustered_location$location[i] == "Cote d'Ivoire"){
+    clustered_location$location[i] = 'Ivory Coast'
+  }
+  if ( clustered_location$location[i] == 'Eswatini' ){
+    clustered_location$location[i] = 'Swaziland'
+  }
+}
+
+
+
+```
+
+
+
+
+```{r}
+clustered_world_map = left_join(world_map,clustered_location,by = c('region' = 'location'))
+clustered_world_map
+```
+
+```{r}
+ggplot(clustered_world_map,aes(x = long, y = lat,group = group, text = region,fill = hdi_cluster == 4))+
+    geom_polygon(colour = "gray50")+
+  scale_fill_manual(values = c('grey','red'))+
+  guides(fill=guide_legend(title=NULL)) + theme(legend.position = "none")-> p
+
+ggplotly(p,tooltip = c("region"))
+```
+     
+```{r}
+seq <- 1:10
+name <- c(paste0("company",1:10))
+value <- c(250,125,50,40,40,30,20,20,10,10)
+d <- data.frame(seq,name,value)
+
+ggplot(data = d, aes(x = seq, y = value, text = name)) + geom_line(group = 1) + geom_point() ->m
+ggplotly(m,tooltip = c('name','value'))
+```
+
+
+```{r}
+a = 'Cluster 1 : (Low HDI countries)'
+b = strsplit(a,split = " ")[[1]][2]
+b
+```
+
